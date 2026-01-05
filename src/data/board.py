@@ -2,9 +2,11 @@ import weakref
 from functools import total_ordering
 from typing import TYPE_CHECKING, Optional, Literal
 
+from datetime import datetime
+
 from database.sqlite.event.event_store import StoredBoard
 from database.sqlite.event.event_database import EventDatabase
-from utils.date_time import format_timestamp_date_time
+from utils.date_time import format_datetime
 from utils.enum import Result, PlayerRatingType
 
 if TYPE_CHECKING:
@@ -120,13 +122,13 @@ class Board:
         return str(self.result)
 
     @property
-    def last_result_update(self) -> float | None:
+    def last_result_update(self) -> datetime | None:
         return self.stored_board.last_result_update
 
     @property
     def last_result_update_str(self) -> str:
         return (
-            format_timestamp_date_time(self.last_result_update)
+            format_datetime(self.last_result_update)
             if self.last_result_update
             else ''
         )

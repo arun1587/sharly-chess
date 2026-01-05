@@ -1,5 +1,6 @@
 import shutil
 import time
+from datetime import datetime
 from collections import defaultdict
 from collections.abc import Iterator
 from functools import cached_property
@@ -586,9 +587,6 @@ class EventDatabase(MigrationDatabase):
             check_in_open=cls.load_bool_from_database_field(row['check_in_open']),
             rounds=row['rounds'],
             rating=row['rating'],
-            last_update=row['last_update'],
-            last_player_update=row['last_player_update'],
-            last_pairing_update=row['last_pairing_update'],
             start_date=cls.load_optional_date_from_database_field(row['start_date']),
             stop_date=cls.load_optional_date_from_database_field(row['stop_date']),
             location=row['location'],
@@ -601,6 +599,13 @@ class EventDatabase(MigrationDatabase):
             ),
             pab_value=row['pab_value'],
             plugin_data=cls.load_json_from_database_field(row['plugin_data'], {}),
+            last_update=cls.load_datetime_from_database_field(row['last_update']),
+            last_player_update=cls.load_datetime_from_database_field(
+                row['last_player_update']
+            ),
+            last_pairing_update=cls.load_datetime_from_database_field(
+                row['last_pairing_update']
+            ),
         )
 
         return stored_tournament
@@ -670,7 +675,8 @@ class EventDatabase(MigrationDatabase):
                 stored_tournament.start_date
             ),
             'stop_date': self.dump_date_to_database_field(stored_tournament.stop_date),
-            'last_update': time.time(),
+            'stop_date': self.dump_date_to_database_field(stored_tournament.stop_date),
+            'last_update': self.dump_datetime_to_database_field(datetime.now()),
             'plugin_data': self.dump_to_json_database_field(
                 stored_tournament.plugin_data, {}
             ),
@@ -735,7 +741,7 @@ class EventDatabase(MigrationDatabase):
             'WHERE `id` = ?',
             (
                 self.dump_to_json_database_field(pairing_settings),
-                time.time(),
+                self.dump_datetime_to_database_field(datetime.now()),
                 tournament_id,
             ),
         )
@@ -749,7 +755,7 @@ class EventDatabase(MigrationDatabase):
             'WHERE `id` = ?',
             (
                 current_round,
-                time.time(),
+                self.dump_datetime_to_database_field(datetime.now()),
                 tournament_id,
             ),
         )
@@ -1216,7 +1222,11 @@ class EventDatabase(MigrationDatabase):
             white_player_id=row['white_player_id'],
             black_player_id=row['black_player_id'],
             index=row['index'],
-            last_result_update=row['last_result_update'],
+            last_result_update=cls.load_datetime_from_database_field(
+                row['last_result_update']
+            )
+            if row['last_result_update']
+            else None,
         )
 
     def load_tournament_stored_boards_by_round(
@@ -1272,7 +1282,7 @@ class EventDatabase(MigrationDatabase):
 
     def update_board_last_result_update(
         self, board_id: int, clear: bool = False
-    ) -> float | None:
+    ) -> datetime | None:
         """Updates board timestamp"""
 
         if clear:
@@ -1282,11 +1292,12 @@ class EventDatabase(MigrationDatabase):
             )
             return None
         else:
-            date = time.time()
+            date = datetime.now()
+            date_str = self.dump_datetime_to_database_field(date)
 
             self.execute(
                 'UPDATE `board` SET `last_result_update` = ? WHERE `id` = ?',
-                (date, board_id),
+                (date_str, board_id),
             )
 
             return date
@@ -1331,7 +1342,7 @@ class EventDatabase(MigrationDatabase):
             number=row['number'],
             message_default=cls.load_bool_from_database_field(row['message_default']),
             message_text=row['message_text'],
-            last_update=row['last_update'],
+            last_update=cls.load_datetime_from_database_field(row['last_update']),
         )
 
     def get_stored_family(self, family_id: int) -> StoredFamily | None:
@@ -1407,7 +1418,7 @@ class EventDatabase(MigrationDatabase):
             stored_family.number,
             stored_family.message_default,
             stored_family.message_text,
-            time.time(),
+            self.dump_datetime_to_database_field(datetime.now()),
         ]
         if stored_family.id is None:
             protected_fields = [f'`{f}`' for f in fields]
@@ -1490,7 +1501,7 @@ class EventDatabase(MigrationDatabase):
             background_color=row['background_color'],
             message_default=cls.load_bool_from_database_field(row['message_default']),
             message_text=row['message_text'],
-            last_update=row['last_update'],
+            last_update=cls.load_datetime_from_database_field(row['last_update']),
         )
 
     def get_stored_screen(self, screen_id: int) -> StoredScreen | None:
@@ -1520,7 +1531,7 @@ class EventDatabase(MigrationDatabase):
         self.execute(
             'UPDATE `screen` SET `last_update` = ? WHERE `id` = ?',
             (
-                time.time(),
+                self.dump_datetime_to_database_field(datetime.now()),
                 screen_id,
             ),
         )
@@ -1593,7 +1604,7 @@ class EventDatabase(MigrationDatabase):
             stored_screen.background_color if stored_screen.type == 'image' else None,
             stored_screen.message_default,
             stored_screen.message_text,
-            time.time(),
+            self.dump_datetime_to_database_field(datetime.now()),
         ]
         if stored_screen.id is None:
             protected_fields = [f'`{f}`' for f in fields]
@@ -1649,7 +1660,7 @@ class EventDatabase(MigrationDatabase):
             fixed_boards_str=row['fixed_boards_str'],
             first=row['first'],
             last=row['last'],
-            last_update=row['last_update'],
+            last_update=cls.load_datetime_from_database_field(row['last_update']),
         )
 
     def get_stored_screen_set(self, screen_set_id: int) -> StoredScreenSet | None:
@@ -1717,7 +1728,7 @@ class EventDatabase(MigrationDatabase):
             stored_screen_set.fixed_boards_str,
             stored_screen_set.first,
             stored_screen_set.last,
-            time.time(),
+            self.dump_datetime_to_database_field(datetime.now()),
         ]
         if stored_screen_set.id is None:
             protected_fields = [f'`{f}`' for f in fields]

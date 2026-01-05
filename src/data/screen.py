@@ -6,6 +6,8 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Optional
 from _weakref import ReferenceType
 
+from datetime import datetime, timedelta
+
 from common.background import inline_image_url
 from common.i18n import _
 from common.logger import get_logger
@@ -13,7 +15,7 @@ from common.sharly_chess_config import SharlyChessConfig
 from data.board import Board
 from data.screen_set import ScreenSet
 from data.timer import Timer
-from utils.date_time import format_timestamp_date_time
+from utils.date_time import format_datetime
 from utils.enum import ScreenType
 from database.sqlite.event.event_store import StoredScreen
 
@@ -613,7 +615,7 @@ class Screen:
     @cached_property
     def _results(self) -> list[Board]:
         boards: list[Board] = []
-        oldest = time.time() - self.results_max_age * 60
+        oldest = datetime.now() - timedelta(minutes=self.results_max_age)
         for tournament in self.event.tournaments_by_id.values():
             if (
                 self.results_tournament_ids
@@ -635,7 +637,7 @@ class Screen:
                             boards.append(pairing.board)
 
         boards.sort(
-            key=lambda board: board.last_result_update or float('-inf'), reverse=True
+            key=lambda board: board.last_result_update or datetime.min, reverse=True
         )
         return boards
 
@@ -703,12 +705,12 @@ class Screen:
                 raise ValueError(f'type=[{self.type}]')
 
     @property
-    def last_update(self) -> float:
+    def last_update(self) -> datetime:
         if self.stored_screen:
-            return self.stored_screen.last_update or 0.0
+            return self.stored_screen.last_update
         if self.family is None:
             raise RuntimeError('Family reference unexpectedly None')
-        return self.family.last_update or 0.0
+        return self.family.last_update or datetime.fromtimestamp(0)
 
     @property
     def background_image(self) -> str:
@@ -747,4 +749,4 @@ class Screen:
 
     @property
     def last_update_str(self) -> str | None:
-        return format_timestamp_date_time(self.last_update)
+        return format_datetime(self.last_update)

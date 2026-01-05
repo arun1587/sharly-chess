@@ -51,6 +51,7 @@ class SQLiteDatabase:
         db_url: str = f'file:{self.file}?mode={"rw" if self.write else "ro"}'
         try:
             self.database = connect(db_url, detect_types=1, uri=True)
+
             self.cursor = self.database.cursor()
 
             self.cursor.execute('PRAGMA busy_timeout=5000')
@@ -159,7 +160,9 @@ class SQLiteDatabase:
         return date_.strftime('%Y-%m-%d') if date_ else None
 
     @staticmethod
-    def load_datetime_from_database_field(data: str) -> datetime:
+    def load_datetime_from_database_field(data: str | float | int) -> datetime:
+        if isinstance(data, (float, int)):
+            return datetime.fromtimestamp(data)
         return datetime.strptime(data, '%Y-%m-%dT%H:%M')
 
     @staticmethod

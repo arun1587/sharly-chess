@@ -1,5 +1,6 @@
 import math
 import weakref
+from datetime import datetime
 from collections.abc import Iterable
 from itertools import chain
 from typing import Any, TYPE_CHECKING, Optional
@@ -8,7 +9,7 @@ from _weakref import ReferenceType
 from common.i18n import _
 from data.board import Board
 from data.player import TournamentPlayer
-from utils.date_time import format_timestamp_date_time
+from utils.date_time import format_datetime
 from utils.enum import ScreenType
 from database.sqlite.event.event_store import StoredScreenSet
 
@@ -447,16 +448,16 @@ class ScreenSet:
         return self.last_item
 
     @property
-    def last_update(self) -> float | None:
+    def last_update(self) -> datetime:
         if self.stored_screen_set:
             return self.stored_screen_set.last_update
         else:
             assert self.family is not None
-            return self.family.last_update
+            return self.family.last_update or datetime.fromtimestamp(0)
 
     @property
     def last_update_str(self) -> str:
-        return format_timestamp_date_time(self.last_update)
+        return format_datetime(self.last_update)
 
     @property
     def numbers_str(self) -> str:

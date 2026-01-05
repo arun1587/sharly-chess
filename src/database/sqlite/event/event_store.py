@@ -10,6 +10,8 @@ from typing import Any
 from common.sharly_chess_config import SharlyChessConfig
 from utils.enum import Result
 
+EPOCH = datetime.fromtimestamp(0)
+
 
 @dataclass
 class StoredTimerHour:
@@ -109,7 +111,7 @@ class StoredBoard:
     white_player_id: int
     black_player_id: int | None
     index: int
-    last_result_update: float | None = None
+    last_result_update: datetime | None = None
 
 
 @dataclass
@@ -169,9 +171,9 @@ class StoredTournament:
     rounds: int = 1
     rating: int = 1
     player_rating_type: int | None = None
-    last_update: float = 0.0
-    last_player_update: float = 0.0
-    last_pairing_update: float = 0.0
+    last_update: datetime = EPOCH
+    last_player_update: datetime = EPOCH
+    last_pairing_update: datetime = EPOCH
     three_points_for_a_win: bool = False
     override_unrated_rapid_blitz: bool = True
     pab_value: int = Result.WIN.value
@@ -209,7 +211,7 @@ class StoredScreenSet:
     fixed_boards_str: str | None
     first: int | None
     last: int | None
-    last_update: float = 0.0
+    last_update: datetime = EPOCH
     errors: dict[str, str] = field(default_factory=dict[str, str])
 
 
@@ -240,7 +242,7 @@ class StoredScreen:
     stored_screen_sets: list[StoredScreenSet] = field(
         default_factory=list[StoredScreenSet]
     )
-    last_update: float = 0.0
+    last_update: datetime = EPOCH
     public: bool = True
     message_default: bool = True
     message_text: str | None = None
@@ -275,7 +277,7 @@ class StoredFamily:
     public: bool = True
     message_default: bool = True
     message_text: str | None = None
-    last_update: float = 0.0
+    last_update: datetime = EPOCH
     errors: dict[str, str] = field(default_factory=dict[str, str])
 
 
