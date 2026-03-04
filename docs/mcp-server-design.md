@@ -66,10 +66,11 @@ src/
     ├── tools/
     │   ├── __init__.py
     │   ├── events.py      # read tools: list_events, get_event
-    │   ├── tournaments.py # read tools: list_tournaments, get_tournament, get_pairings, get_standings
+    │   ├── tournaments.py # read + write: list_tournaments, get_tournament, get_pairings, get_standings, create_tournament
     │   ├── players.py     # read + write: list_players, get_player, add_player, update_player
     │   ├── checkin.py     # write tools: check_in_player, check_out_player
-    │   └── results.py     # write tools: set_result, set_special_result, set_bye
+    │   ├── results.py     # write tools: set_result, set_special_result, set_bye
+    │   └── timers.py      # write tools: create_timer, update_timer
     ├── auth.py            # token validation, service-account → Client mapping
     ├── audit.py           # append-only audit log
     └── config.py          # loads mcp_config.toml
@@ -118,6 +119,8 @@ mcp = ["mcp>=1.0"]          # installable separately if desired
 | Add player | `Tournament.add_player()` | `src/data/tournament.py` |
 | Update player | `Tournament.update_player()` | `src/data/tournament.py` |
 | Check in/out player | `Tournament.set_player_check_in()` | `src/data/tournament.py` |
+| Create tournament | `Event.add_tournament()` | `src/data/event.py` |
+| Create / update timer | `Event.add_timer()`, `Event.update_timer()` | `src/data/event.py` |
 | Access-level model | `Client`, `AuthAction` | `src/data/access_levels/` |
 | Database connection | `EventDatabase` | `src/database/sqlite/event/event_database.py` |
 | Config | `SharlyChessConfig` | `src/common/sharly_chess_config.py` |
@@ -205,7 +208,7 @@ All tools follow the same pattern:
 
 Write tools are **only registered** if the service account has `"allow_writes": true` in `mcp_config.toml`.
 
-The following write tools are included because they are **reversible, additive, or narrowly scoped** — they cannot put the database into an inconsistent state. Explicitly excluded are: `generate_pairings` (advances tournament round, complex to reverse), `delete_pairings` (destructive), `delete_player` (breaks pairing integrity if games exist), `create_event` / `create_tournament` (require many interdependent fields to initialise correctly).
+The following write tools are included because they are **reversible, additive, or narrowly scoped** — they cannot put the database into an inconsistent state. Explicitly excluded are: `generate_pairings` (advances tournament round, complex to reverse), `delete_pairings` (destructive), `delete_player` (breaks pairing integrity if games exist).
 
 #### `set_result`
 - **Auth required:** `AuthAction.SET_RESULTS`
@@ -249,6 +252,35 @@ The following write tools are included because they are **reversible, additive, 
 - **Guardrails:**
   - `rating` changes rejected after round 1 pairings exist (rating affects pairing weights)
   - Unknown fields cause a `McpValidationError` — no silent ignoring of unrecognised keys
+- **Returns:** `{ok: true, updated_fields: [...]}`
+
+#### `create_tournament`
+- **Auth required:** `AuthAction.ADD_TOURNAMENTS`
+- **Arguments:**
+  - `event_id: str` (required)
+  - `name: str` (required)
+  - `pairing_system: "swiss" | "round_robin" | "seats"` (required)
+  - `rounds: int` (required, 1–30)
+  - `rating_limit_min: int | None` — minimum rating for eligibility
+  - `rating_limit_max: int | None` — maximum rating for eligibility
+  - `tie_breaks: list[str] | None` — ordered list of tie-break codes (defaults to system default)
+  - `public: bool` — whether the tournament is publicly visible (default `true`)
+- **Guardrails:** Purely additive — creates a new empty tournament, never touches existing tournaments. `name` must be unique within the event.
+- **Returns:** `{ok: true, tournament_id: str}`
+
+#### `create_timer`
+- **Auth required:** `AuthAction.MANAGE_TIMERS`
+- **Arguments:**
+  - `event_id: str` (required)
+  - `name: str` (required)
+  - `rounds: list[{minutes: int, increment_seconds: int}]` (required) — one entry per round; a single entry applies to all rounds
+- **Guardrails:** Purely additive — timers are standalone config objects, completely independent of tournament state. `name` must be unique within the event.
+- **Returns:** `{ok: true, timer_id: str}`
+
+#### `update_timer`
+- **Auth required:** `AuthAction.MANAGE_TIMERS`
+- **Arguments:** `event_id`, `timer_id`, plus any subset of: `name`, `rounds`
+- **Guardrails:** Rejected if the timer is currently **active** (in use by a running round) to avoid mid-game config changes
 - **Returns:** `{ok: true, updated_fields: [...]}`
 
 ---
@@ -593,7 +625,8 @@ Once installed (`pip install sharly-chess`), users add this to their Claude Desk
 | `src/mcp/audit.py` | Append-only JSONL audit log |
 | `src/mcp/errors.py` | Exception hierarchy |
 | `src/mcp/tools/events.py` | `list_events`, `get_event` |
-| `src/mcp/tools/tournaments.py` | `list_tournaments`, `get_tournament`, `get_pairings`, `get_standings` |
+| `src/mcp/tools/tournaments.py` | `list_tournaments`, `get_tournament`, `get_pairings`, `get_standings`, `create_tournament` |
+| `src/mcp/tools/timers.py` | `create_timer`, `update_timer` |
 | `src/mcp/tools/players.py` | `list_players`, `get_player`, `add_player`, `update_player` |
 | `src/mcp/tools/checkin.py` | `check_in_player`, `check_out_player` |
 | `src/mcp/tools/results.py` | `set_result`, `set_special_result`, `set_bye` (all write, opt-in) |
