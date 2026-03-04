@@ -67,8 +67,9 @@ src/
     │   ├── __init__.py
     │   ├── events.py      # read tools: list_events, get_event
     │   ├── tournaments.py # read tools: list_tournaments, get_tournament, get_pairings, get_standings
-    │   ├── players.py     # read tools: list_players, get_player
-    │   └── results.py     # write tool: set_result  (guarded)
+    │   ├── players.py     # read + write: list_players, get_player, add_player, update_player
+    │   ├── checkin.py     # write tools: check_in_player, check_out_player
+    │   └── results.py     # write tools: set_result, set_special_result, set_bye
     ├── auth.py            # token validation, service-account → Client mapping
     ├── audit.py           # append-only audit log
     └── config.py          # loads mcp_config.toml
@@ -112,6 +113,11 @@ mcp = ["mcp>=1.0"]          # installable separately if desired
 | Tournament data (pairings, standings) | `Tournament` | `src/data/tournament.py` |
 | Player data | `TournamentPlayer` | `src/data/tournament.py` |
 | Set game result | `Tournament.set_result()` | `src/data/tournament.py` |
+| Set special result | `Tournament.set_special_result()` | `src/data/tournament.py` |
+| Set bye | `Tournament.set_bye()` | `src/data/tournament.py` |
+| Add player | `Tournament.add_player()` | `src/data/tournament.py` |
+| Update player | `Tournament.update_player()` | `src/data/tournament.py` |
+| Check in/out player | `Tournament.set_player_check_in()` | `src/data/tournament.py` |
 | Access-level model | `Client`, `AuthAction` | `src/data/access_levels/` |
 | Database connection | `EventDatabase` | `src/database/sqlite/event/event_database.py` |
 | Config | `SharlyChessConfig` | `src/common/sharly_chess_config.py` |
@@ -199,11 +205,51 @@ All tools follow the same pattern:
 
 Write tools are **only registered** if the service account has `"allow_writes": true` in `mcp_config.toml`.
 
+The following write tools are included because they are **reversible, additive, or narrowly scoped** — they cannot put the database into an inconsistent state. Explicitly excluded are: `generate_pairings` (advances tournament round, complex to reverse), `delete_pairings` (destructive), `delete_player` (breaks pairing integrity if games exist), `create_event` / `create_tournament` (require many interdependent fields to initialise correctly).
+
 #### `set_result`
 - **Auth required:** `AuthAction.SET_RESULTS`
 - **Arguments:** `event_id`, `tournament_id`, `round`, `board`, `result: "1-0" | "0-1" | "=" | "*"`
-- **Guardrails:** see Section 7
-- **Returns:** `{ok: true, new_standings_preview: [...]}` (preview of standings change)
+- **Guardrails:** Confirmation required when overwriting an already-set result (see Section 7.4)
+- **Returns:** `{ok: true, new_standings_preview: [...]}`
+
+#### `set_special_result`
+- **Auth required:** `AuthAction.SET_SPECIAL_RESULTS`
+- **Arguments:** `event_id`, `tournament_id`, `round`, `board`, `result: "F-0" | "0-F" | "F-F" | "1/2Z" | "Z-Z"`
+- **Guardrails:** Same confirmation flow as `set_result` when overwriting
+- **Returns:** `{ok: true, new_standings_preview: [...]}`
+
+#### `set_bye`
+- **Auth required:** `AuthAction.SET_BYE`
+- **Arguments:** `event_id`, `tournament_id`, `round`, `player_id`, `bye_type: "full" | "half" | "zero"`
+- **Guardrails:** Rejected if player already has a pairing for the round (no silent overwrite)
+- **Returns:** `{ok: true}`
+
+#### `check_in_player`
+- **Auth required:** `AuthAction.CHECK_IN`
+- **Arguments:** `event_id`, `tournament_id`, `player_id`
+- **Guardrails:** No-op (returns `ok`) if player is already checked in — never errors on double check-in
+- **Returns:** `{ok: true, checked_in: true}`
+
+#### `check_out_player`
+- **Auth required:** `AuthAction.CHECK_IN`
+- **Arguments:** `event_id`, `tournament_id`, `player_id`
+- **Guardrails:** Rejected if the current round has already started (pairings exist for this round involving this player) — checking out mid-round would leave an inconsistent pairing
+- **Returns:** `{ok: true, checked_in: false}`
+
+#### `add_player`
+- **Auth required:** `AuthAction.ADD_PLAYERS`
+- **Arguments:** `event_id`, `tournament_id`, `last_name: str`, `first_name: str`, `rating: int | None`, `title: str | None`, `fide_id: int | None`, `federation: str | None`
+- **Guardrails:** Rejected if tournament has already started (round 1 pairings exist) — adding players mid-tournament is not safe
+- **Returns:** `{ok: true, player_id: str}`
+
+#### `update_player`
+- **Auth required:** `AuthAction.UPDATE_PLAYERS`
+- **Arguments:** `event_id`, `tournament_id`, `player_id`, plus any subset of: `last_name`, `first_name`, `rating`, `title`, `federation`, `fide_id`, `phone`, `email`
+- **Guardrails:**
+  - `rating` changes rejected after round 1 pairings exist (rating affects pairing weights)
+  - Unknown fields cause a `McpValidationError` — no silent ignoring of unrecognised keys
+- **Returns:** `{ok: true, updated_fields: [...]}`
 
 ---
 
@@ -293,7 +339,15 @@ All tool arguments must be validated before reaching the service layer:
 | `tournament_id` | Same pattern |
 | `player_id` | Same pattern |
 | `round` | Integer, 1 ≤ round ≤ max rounds |
+| `board` | Integer ≥ 1 |
 | `result` | Enum: `"1-0"`, `"0-1"`, `"="`, `"*"` only |
+| `special_result` | Enum: `"F-0"`, `"0-F"`, `"F-F"`, `"1/2Z"`, `"Z-Z"` only |
+| `bye_type` | Enum: `"full"`, `"half"`, `"zero"` only |
+| `rating` | Integer, 0 ≤ rating ≤ 4000 |
+| `fide_id` | Integer ≥ 1, or null |
+| `title` | Enum of valid FIDE titles: `"GM"`, `"IM"`, `"FM"`, `"CM"`, `"WGM"`, `"WIM"`, `"WFM"`, `"WCM"`, `""` |
+| `federation` | 3-letter ISO 3166-1 alpha-3 code, or null |
+| Free-text fields (`last_name`, `first_name`, `email`, `phone`) | Max 100 chars, stripped of leading/trailing whitespace |
 
 Fail fast with a descriptive `McpValidationError` — never pass raw user strings to SQL or filesystem paths.
 
@@ -479,7 +533,7 @@ class AuditLog:
 - `test_auth.py` — token validation, unknown token, revoked token
 - `test_authz.py` — each `AuthAction` allowed/denied per access level
 - `test_tools_read.py` — each read tool with mock service layer
-- `test_tools_write.py` — `set_result` happy path, confirmation flow, overwrite guard
+- `test_tools_write.py` — `set_result`, `set_special_result`, `set_bye`, `check_in_player`, `check_out_player`, `add_player`, `update_player` happy paths, confirmation flows, and guardrail rejections
 - `test_rate_limit.py` — token bucket behaviour
 - `test_config.py` — config loading, permission check, missing file
 
@@ -540,8 +594,9 @@ Once installed (`pip install sharly-chess`), users add this to their Claude Desk
 | `src/mcp/errors.py` | Exception hierarchy |
 | `src/mcp/tools/events.py` | `list_events`, `get_event` |
 | `src/mcp/tools/tournaments.py` | `list_tournaments`, `get_tournament`, `get_pairings`, `get_standings` |
-| `src/mcp/tools/players.py` | `list_players`, `get_player` |
-| `src/mcp/tools/results.py` | `set_result` (write, opt-in) |
+| `src/mcp/tools/players.py` | `list_players`, `get_player`, `add_player`, `update_player` |
+| `src/mcp/tools/checkin.py` | `check_in_player`, `check_out_player` |
+| `src/mcp/tools/results.py` | `set_result`, `set_special_result`, `set_bye` (all write, opt-in) |
 | `tests/unit/mcp/` | Unit test suite |
 | `tests/e2e/mcp/` | Integration test suite |
 | `mcp_config.toml.example` | Template config (committed) |
